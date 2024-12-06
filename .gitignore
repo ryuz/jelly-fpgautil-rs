@@ -1,1 +1,11 @@
 /target
+
+.*
+!.gitignore
+
+_*
+*_
+*_.*
+
+*.bit
+*.bin
