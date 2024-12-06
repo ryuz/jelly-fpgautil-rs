@@ -1,0 +1,7 @@
+[package]
+name = "jelly-fpgautil"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+jelly-uidmng = {git="https://github.com/ryuz/jelly-uidmng.git"}
