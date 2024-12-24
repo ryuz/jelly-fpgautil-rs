@@ -46,34 +46,30 @@ pub fn copy_to_firmware(path: &str) -> Result<(), Box<dyn Error>> {
     let firmware_path = format!("/lib/firmware/{}", fname);
     let out = command_root("cp", [path, &firmware_path])?;
     if !out.status.success() {
-        return Err("Failed to copy bitstream".into());
+        return Err(format!("Faile to copy {} to firmware", path).into());
     }
     Ok(())
 }
 
-pub fn load_bitstream(bitstream: &str) -> Result<(), Box<dyn Error>> {
-    let fname = Path::new(bitstream)
-        .file_name()
-        .ok_or("Failed to extract filename")?
-        .to_str()
-        .ok_or("Invalid filename")?;
-    let firmware_path = format!("/lib/firmware/{}", fname);
-    let out = command_root("cp", [bitstream, &firmware_path])?;
-    if !out.status.success() {
-        return Err("Failed to copy bitstream".into());
-    }
-    let load_cmd = format!("echo {} > /sys/class/fpga_manager/fpga0/firmware", fname);
+pub fn load_bitstream_from_firmware(bitstream_name: &str) -> Result<(), Box<dyn Error>> {
+    let load_cmd = format!("echo {} > /sys/class/fpga_manager/fpga0/firmware", bitstream_name);
     let out = command_root("sh", ["-c", &load_cmd])?;
     if !out.status.success() {
         return Err("Failed to load bitstream".into());
     }
-
     Ok(())
 }
 
-pub fn load_bitstream_with_vec(bitstream: &[u8]) -> Result<(), Box<dyn Error>> {
+pub fn load_bitstream(bitstream_path: &str) -> Result<(), Box<dyn Error>> {
+    let fname = get_fname(bitstream_path)?;
+    copy_to_firmware(bitstream_path)?;
+    load_bitstream_from_firmware(fname)?;
+    Ok(())
+}
+
+pub fn load_bitstream_with_vec(bitstream_vec: &[u8]) -> Result<(), Box<dyn Error>> {
     let firmware_path = "/lib/firmware/jelly-fpgautil.bin";
-    write_root(firmware_path, bitstream)?;
+    write_root(firmware_path, bitstream_vec)?;
     let load_cmd = "echo jelly-fpgautil.bin > /sys/class/fpga_manager/fpga0/firmware";
     let out = command_root("sh", ["-c", &load_cmd])?;
     if !out.status.success() {
@@ -83,16 +79,10 @@ pub fn load_bitstream_with_vec(bitstream: &[u8]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-
-
-pub fn load_dtb(dtb: &str) -> Result<(), Box<dyn Error>> {
-    let fname = Path::new(dtb)
-        .file_name()
-        .ok_or("Failed to extract filename")?
-        .to_str()
-        .ok_or("Invalid filename")?;
+pub fn load_dtb(dtb_path: &str) -> Result<(), Box<dyn Error>> {
+    let fname = get_fname(dtb_path)?;
     let firmware_path = format!("/lib/firmware/{}", fname);
-    let out = command_root("cp", [dtb, &firmware_path])?;
+    let out = command_root("cp", [dtb_path, &firmware_path])?;
     if !out.status.success() {
         return Err("Failed to copy bitstream".into());
     }
