@@ -51,10 +51,15 @@ pub fn copy_to_firmware(path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub fn write_to_firmware(name: &str, bin : &[u8]) -> Result<(), Box<dyn Error>> {
+    let firmware_path = format!("/lib/firmware/{}", name);
+    write_root(&firmware_path, bin)
+}
+
 pub fn load_bitstream_from_firmware(bitstream_name: &str) -> Result<(), Box<dyn Error>> {
     let load_cmd = format!("echo {} > /sys/class/fpga_manager/fpga0/firmware", bitstream_name);
-    let out = command_root("sh", ["-c", &load_cmd])?;
-    if !out.status.success() {
+    let output = command_root("sh", ["-c", &load_cmd])?;
+    if !output.status.success() {
         return Err("Failed to load bitstream".into());
     }
     Ok(())
@@ -68,32 +73,40 @@ pub fn load_bitstream(bitstream_path: &str) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn load_bitstream_with_vec(bitstream_vec: &[u8]) -> Result<(), Box<dyn Error>> {
-    let firmware_path = "/lib/firmware/jelly-fpgautil.bin";
-    write_root(firmware_path, bitstream_vec)?;
-    let load_cmd = "echo jelly-fpgautil.bin > /sys/class/fpga_manager/fpga0/firmware";
-    let out = command_root("sh", ["-c", &load_cmd])?;
-    if !out.status.success() {
-        return Err("Failed to load bitstream".into());
-    }
-
+    write_root("/lib/firmware/jelly-fpgautil.bin", bitstream_vec)?;
+    write_root("/sys/class/fpga_manager/fpga0/firmware", b"jelly-fpgautil.bin")?;
     Ok(())
 }
 
-pub fn load_dtb(dtb_path: &str) -> Result<(), Box<dyn Error>> {
+pub fn load_dtbo_from_firmware(dtb_name: &str) -> Result<(), Box<dyn Error>> {
+    write_root("/sys/class/fpga_manager/fpga0/flags", b"0")?;
+    let output = command_root("mkdir", ["/configfs/device-tree/overlays/full"])?;
+    if !output.status.success() {
+        return Err("Failed to mkdir /configfs/device-tree/overlays/full".into());
+    }
+    write_root("/configfs/device-tree/overlays/full/path", dtb_name.as_bytes())?;
+
+    for _ in 0..10 {
+        if read("/configfs/device-tree/overlays/full/status")? == b"applied\n" {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_micros(100));
+    }
+    return Err("Timeout to apply dtbo".into());
+}
+
+pub fn load_dtbo(dtb_path: &str) -> Result<(), Box<dyn Error>> {
     let fname = get_fname(dtb_path)?;
-    let firmware_path = format!("/lib/firmware/{}", fname);
-    let out = command_root("cp", [dtb_path, &firmware_path])?;
-    if !out.status.success() {
-        return Err("Failed to copy bitstream".into());
-    }
-    let load_cmd = format!("echo {} > /sys/class/fpga_manager/fpga0/firmware", fname);
-    let out = command_root("sh", ["-c", &load_cmd])?;
-    if !out.status.success() {
-        return Err("Failed to load bitstream".into());
-    }
-
+    copy_to_firmware(dtb_path)?;
+    load_dtbo_from_firmware(fname)?;
     Ok(())
 }
+
+pub fn load_dtb_with_vec(dtb_path: &[u8]) -> Result<(), Box<dyn Error>> {
+    write_root("/lib/firmware/jelly-fpgautil.dtbo", dtb_path)?;
+    load_dtbo_from_firmware("jelly-fpgautil.dtbo")
+}
+
 
 // register accelerator package
 pub fn register_accel(
