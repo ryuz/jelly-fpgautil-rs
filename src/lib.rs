@@ -2,7 +2,10 @@ use jelly_uidmng::*;
 use std::error::Error;
 use std::fs;
 use std::path::Path;
+use std::io::Write;
 use std::result::Result;
+use std::process::{Command, Stdio};
+
 
 fn directory_exists(path: &str) -> bool {
     let path = Path::new(path);
@@ -88,14 +91,9 @@ pub fn register_accel(
     )?;
 
     if let Some(json_file) = json_file {
-        let json_fname = Path::new(json_file)
-            .file_name()
-            .ok_or("Failed to extract filename")?
-            .to_str()
-            .ok_or("Invalid filename")?;
         command_root(
             "cp",
-            [json_file, &format!("{}/{}", acclel_path, json_fname)],
+            [json_file, &format!("{}/shell.json", acclel_path)],
         )?;
     } else {
         let json_data = "{\n    \"shell_type\" : \"XRT_FLAT\",\n    \"num_slots\" : \"1\"\n}\n";
@@ -106,4 +104,65 @@ pub fn register_accel(
     }
 
     Ok(())
+}
+
+// register accelerator package
+pub fn register_accel_with_vec(
+    accel_name: &str,
+    bin_fname: &str,
+    bin: &[u8],
+    dtbo_fname: &str,
+    dtbo: &[u8],
+    json: Option<&str>,
+    overwrite: bool,
+) -> Result<(), Box<dyn Error>> {
+    // acclel_path のディレクトリ存在チェック
+    let acclel_path = format!("/lib/firmware/xilinx/{}", accel_name);
+    if directory_exists(&acclel_path) {
+        if !overwrite {
+            return Err("Accel already exists".into());
+        }
+        let out = command_root("rm", ["-rf", &acclel_path])?;
+        if !out.status.success() {
+            return Err("Failed to remove existing accel".into());
+        }
+    }
+    command_root("mkdir", ["-p", &acclel_path])?;
+    write_root(&format!("{}/{}", acclel_path, bin_fname), bin)?;
+    write_root(&format!("{}/{}", acclel_path, dtbo_fname), dtbo)?;
+    if let Some(json) = json {
+        write_root(&format!("{}/shell.json", acclel_path), &json.as_bytes())?;
+    } else {
+        let json_data = "{\n    \"shell_type\" : \"XRT_FLAT\",\n    \"num_slots\" : \"1\"\n}\n";
+        write_root(
+            &format!("{}/shell.json", acclel_path),
+            &json_data.as_bytes().to_vec(),
+        )?;
+    }
+
+    Ok(())
+}
+
+
+pub fn unregister_accel(accel_name: &str) -> Result<(), Box<dyn Error>> {
+    let acclel_path = format!("/lib/firmware/xilinx/{}", accel_name);
+    command_root("rm", ["-rf", &acclel_path])?;
+    Ok(())
+}
+
+
+pub fn dtc_with_str(dts: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut child = Command::new("dtc")
+        .args(["-I", "dts", "-O", "dtb", "-o", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(dts.as_bytes())?;
+    }
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        return Err("Failed to execute dtc".into());
+    }
+    Ok(output.stdout)
 }
