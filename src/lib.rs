@@ -1,11 +1,10 @@
 use jelly_uidmng::*;
 use std::error::Error;
 use std::fs;
-use std::path::Path;
 use std::io::Write;
-use std::result::Result;
+use std::path::Path;
 use std::process::{Command, Stdio};
-
+use std::result::Result;
 
 fn directory_exists(path: &str) -> bool {
     let path = Path::new(path);
@@ -24,7 +23,6 @@ fn get_fname(path: &str) -> Result<&str, Box<dyn Error>> {
     Ok(fname)
 }
 
-
 pub fn set_allow_sudo(allow: bool) {
     jelly_uidmng::set_allow_sudo(allow);
 }
@@ -34,7 +32,6 @@ pub fn unload() -> Result<(), Box<dyn Error>> {
     command_root("rmdir", ["/configfs/device-tree/overlays/full"])?;
     Ok(())
 }
-
 
 pub fn load(accel_name: &str) -> Result<(), Box<dyn Error>> {
     command_root("dfx-mgr-client", ["-load", accel_name])?;
@@ -51,13 +48,16 @@ pub fn copy_to_firmware(path: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn write_to_firmware(name: &str, bin : &[u8]) -> Result<(), Box<dyn Error>> {
+pub fn write_to_firmware(name: &str, bin: &[u8]) -> Result<(), Box<dyn Error>> {
     let firmware_path = format!("/lib/firmware/{}", name);
     write_root(&firmware_path, bin)
 }
 
 pub fn load_bitstream_from_firmware(bitstream_name: &str) -> Result<(), Box<dyn Error>> {
-    let load_cmd = format!("echo {} > /sys/class/fpga_manager/fpga0/firmware", bitstream_name);
+    let load_cmd = format!(
+        "echo {} > /sys/class/fpga_manager/fpga0/firmware",
+        bitstream_name
+    );
     let output = command_root("sh", ["-c", &load_cmd])?;
     if !output.status.success() {
         return Err("Failed to load bitstream".into());
@@ -74,7 +74,10 @@ pub fn load_bitstream(bitstream_path: &str) -> Result<(), Box<dyn Error>> {
 
 pub fn load_bitstream_with_vec(bitstream_vec: &[u8]) -> Result<(), Box<dyn Error>> {
     write_root("/lib/firmware/jelly-fpgautil.bin", bitstream_vec)?;
-    write_root("/sys/class/fpga_manager/fpga0/firmware", b"jelly-fpgautil.bin")?;
+    write_root(
+        "/sys/class/fpga_manager/fpga0/firmware",
+        b"jelly-fpgautil.bin",
+    )?;
     Ok(())
 }
 
@@ -84,7 +87,10 @@ pub fn load_dtbo_from_firmware(dtb_name: &str) -> Result<(), Box<dyn Error>> {
     if !output.status.success() {
         return Err("Failed to mkdir /configfs/device-tree/overlays/full".into());
     }
-    write_root("/configfs/device-tree/overlays/full/path", dtb_name.as_bytes())?;
+    write_root(
+        "/configfs/device-tree/overlays/full/path",
+        dtb_name.as_bytes(),
+    )?;
 
     for _ in 0..10 {
         if read("/configfs/device-tree/overlays/full/status")? == b"applied\n" {
@@ -106,7 +112,6 @@ pub fn load_dtb_with_vec(dtb_path: &[u8]) -> Result<(), Box<dyn Error>> {
     write_root("/lib/firmware/jelly-fpgautil.dtbo", dtb_path)?;
     load_dtbo_from_firmware("jelly-fpgautil.dtbo")
 }
-
 
 // register accelerator package
 pub fn register_accel(
@@ -147,10 +152,7 @@ pub fn register_accel(
     )?;
 
     if let Some(json_file) = json_file {
-        command_root(
-            "cp",
-            [json_file, &format!("{}/shell.json", acclel_path)],
-        )?;
+        command_root("cp", [json_file, &format!("{}/shell.json", acclel_path)])?;
     } else {
         let json_data = "{\n    \"shell_type\" : \"XRT_FLAT\",\n    \"num_slots\" : \"1\"\n}\n";
         write_root(
@@ -199,13 +201,11 @@ pub fn register_accel_with_vec(
     Ok(())
 }
 
-
 pub fn unregister_accel(accel_name: &str) -> Result<(), Box<dyn Error>> {
     let acclel_path = format!("/lib/firmware/xilinx/{}", accel_name);
     command_root("rm", ["-rf", &acclel_path])?;
     Ok(())
 }
-
 
 pub fn dtc_with_str(dts: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut child = Command::new("dtc")
@@ -221,4 +221,31 @@ pub fn dtc_with_str(dts: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         return Err("Failed to execute dtc".into());
     }
     Ok(output.stdout)
+}
+
+pub fn xlnx_bit_to_bin(bit_path: &str, bin_path: &str, arch: &str) -> Result<(), Box<dyn Error>> {
+    let mut bif_file = tempfile::Builder::new().suffix(".bif").tempfile()?;
+    bif_file.write(format!("all:\n{{\n    {}\n}}\n", bit_path).as_bytes())?;
+    let bif_path = bif_file.path().to_path_buf();
+    bif_file.close()?;
+
+    let output = command_root(
+        "bootgen",
+        [
+            "-w",
+            "-image",
+            &bif_path.to_str().unwrap(),
+            "-arch",
+            arch,
+            "-process_bitstream",
+            "bin",
+            "-o",
+            bin_path,
+        ],
+    )?;
+    if !output.status.success() {
+        return Err("Failed to execute bootgen".into());
+    }
+
+    Ok(())
 }
