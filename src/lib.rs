@@ -1,4 +1,4 @@
-use jelly_uidmng::*;
+use jelly_uidmng as uidmng;
 use std::error::Error;
 use std::fs;
 use std::io::Write;
@@ -24,24 +24,24 @@ fn get_fname(path: &str) -> Result<&str, Box<dyn Error>> {
 }
 
 pub fn set_allow_sudo(allow: bool) {
-    jelly_uidmng::set_allow_sudo(allow);
+    uidmng::set_allow_sudo(allow);
 }
 
 pub fn unload() -> Result<(), Box<dyn Error>> {
-    command_root("dfx-mgr-client", ["-remove"])?;
-    command_root("rmdir", ["/configfs/device-tree/overlays/full"])?;
+    uidmng::command_root("dfx-mgr-client", ["-remove"])?;
+    uidmng::command_root("rmdir", ["/configfs/device-tree/overlays/full"])?;
     Ok(())
 }
 
 pub fn load(accel_name: &str) -> Result<(), Box<dyn Error>> {
-    command_root("dfx-mgr-client", ["-load", accel_name])?;
+    uidmng::command_root("dfx-mgr-client", ["-load", accel_name])?;
     Ok(())
 }
 
 pub fn copy_to_firmware(path: &str) -> Result<(), Box<dyn Error>> {
     let fname = get_fname(path)?;
     let firmware_path = format!("/lib/firmware/{}", fname);
-    let out = command_root("cp", [path, &firmware_path])?;
+    let out = uidmng::command_root("cp", [path, &firmware_path])?;
     if !out.status.success() {
         return Err(format!("Faile to copy {} to firmware", path).into());
     }
@@ -50,7 +50,7 @@ pub fn copy_to_firmware(path: &str) -> Result<(), Box<dyn Error>> {
 
 pub fn write_to_firmware(name: &str, bin: &[u8]) -> Result<(), Box<dyn Error>> {
     let firmware_path = format!("/lib/firmware/{}", name);
-    write_root(&firmware_path, bin)
+    uidmng::write_root(&firmware_path, bin)
 }
 
 pub fn load_bitstream_from_firmware(bitstream_name: &str) -> Result<(), Box<dyn Error>> {
@@ -58,7 +58,7 @@ pub fn load_bitstream_from_firmware(bitstream_name: &str) -> Result<(), Box<dyn 
         "echo {} > /sys/class/fpga_manager/fpga0/firmware",
         bitstream_name
     );
-    let output = command_root("sh", ["-c", &load_cmd])?;
+    let output = uidmng::command_root("sh", ["-c", &load_cmd])?;
     if !output.status.success() {
         return Err("Failed to load bitstream".into());
     }
@@ -73,8 +73,8 @@ pub fn load_bitstream(bitstream_path: &str) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn load_bitstream_with_vec(bitstream_vec: &[u8]) -> Result<(), Box<dyn Error>> {
-    write_root("/lib/firmware/jelly-fpgautil.bin", bitstream_vec)?;
-    write_root(
+    uidmng::write_root("/lib/firmware/jelly-fpgautil.bin", bitstream_vec)?;
+    uidmng::write_root(
         "/sys/class/fpga_manager/fpga0/firmware",
         b"jelly-fpgautil.bin",
     )?;
@@ -82,18 +82,18 @@ pub fn load_bitstream_with_vec(bitstream_vec: &[u8]) -> Result<(), Box<dyn Error
 }
 
 pub fn load_dtbo_from_firmware(dtb_name: &str) -> Result<(), Box<dyn Error>> {
-    write_root("/sys/class/fpga_manager/fpga0/flags", b"0")?;
-    let output = command_root("mkdir", ["/configfs/device-tree/overlays/full"])?;
+    uidmng::write_root("/sys/class/fpga_manager/fpga0/flags", b"0")?;
+    let output = uidmng::command_root("mkdir", ["/configfs/device-tree/overlays/full"])?;
     if !output.status.success() {
         return Err("Failed to mkdir /configfs/device-tree/overlays/full".into());
     }
-    write_root(
+    uidmng::write_root(
         "/configfs/device-tree/overlays/full/path",
         dtb_name.as_bytes(),
     )?;
 
     for _ in 0..10 {
-        if read("/configfs/device-tree/overlays/full/status")? == b"applied\n" {
+        if uidmng::read("/configfs/device-tree/overlays/full/status")? == b"applied\n" {
             return Ok(());
         }
         std::thread::sleep(std::time::Duration::from_micros(100));
@@ -109,7 +109,7 @@ pub fn load_dtbo(dtb_path: &str) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn load_dtb_with_vec(dtb_path: &[u8]) -> Result<(), Box<dyn Error>> {
-    write_root("/lib/firmware/jelly-fpgautil.dtbo", dtb_path)?;
+    uidmng::write_root("/lib/firmware/jelly-fpgautil.dtbo", dtb_path)?;
     load_dtbo_from_firmware("jelly-fpgautil.dtbo")
 }
 
@@ -127,12 +127,12 @@ pub fn register_accel(
         if !overwrite {
             return Err("Accel already exists".into());
         }
-        let out = command_root("rm", ["-rf", &acclel_path])?;
+        let out = uidmng::command_root("rm", ["-rf", &acclel_path])?;
         if !out.status.success() {
             return Err("Failed to remove existing accel".into());
         }
     }
-    command_root("mkdir", ["-p", &acclel_path])?;
+    uidmng::command_root("mkdir", ["-p", &acclel_path])?;
 
     let bin_fname = Path::new(bin_file)
         .file_name()
@@ -145,17 +145,17 @@ pub fn register_accel(
         .to_str()
         .ok_or("Invalid filename")?;
 
-    command_root("cp", [bin_file, &format!("{}/{}", acclel_path, bin_fname)])?;
-    command_root(
+    uidmng::command_root("cp", [bin_file, &format!("{}/{}", acclel_path, bin_fname)])?;
+    uidmng::command_root(
         "cp",
         [dtbo_file, &format!("{}/{}", acclel_path, dtbo_fname)],
     )?;
 
     if let Some(json_file) = json_file {
-        command_root("cp", [json_file, &format!("{}/shell.json", acclel_path)])?;
+        uidmng::command_root("cp", [json_file, &format!("{}/shell.json", acclel_path)])?;
     } else {
         let json_data = "{\n    \"shell_type\" : \"XRT_FLAT\",\n    \"num_slots\" : \"1\"\n}\n";
-        write_root(
+        uidmng::write_root(
             &format!("{}/shell.json", acclel_path),
             &json_data.as_bytes().to_vec(),
         )?;
@@ -180,19 +180,19 @@ pub fn register_accel_with_vec(
         if !overwrite {
             return Err("Accel already exists".into());
         }
-        let out = command_root("rm", ["-rf", &acclel_path])?;
+        let out = uidmng::command_root("rm", ["-rf", &acclel_path])?;
         if !out.status.success() {
             return Err("Failed to remove existing accel".into());
         }
     }
-    command_root("mkdir", ["-p", &acclel_path])?;
-    write_root(&format!("{}/{}", acclel_path, bin_fname), bin)?;
-    write_root(&format!("{}/{}", acclel_path, dtbo_fname), dtbo)?;
+    uidmng::command_root("mkdir", ["-p", &acclel_path])?;
+    uidmng::write_root(&format!("{}/{}", acclel_path, bin_fname), bin)?;
+    uidmng::write_root(&format!("{}/{}", acclel_path, dtbo_fname), dtbo)?;
     if let Some(json) = json {
-        write_root(&format!("{}/shell.json", acclel_path), &json.as_bytes())?;
+        uidmng::write_root(&format!("{}/shell.json", acclel_path), &json.as_bytes())?;
     } else {
         let json_data = "{\n    \"shell_type\" : \"XRT_FLAT\",\n    \"num_slots\" : \"1\"\n}\n";
-        write_root(
+        uidmng::write_root(
             &format!("{}/shell.json", acclel_path),
             &json_data.as_bytes().to_vec(),
         )?;
@@ -203,7 +203,7 @@ pub fn register_accel_with_vec(
 
 pub fn unregister_accel(accel_name: &str) -> Result<(), Box<dyn Error>> {
     let acclel_path = format!("/lib/firmware/xilinx/{}", accel_name);
-    command_root("rm", ["-rf", &acclel_path])?;
+    uidmng::command_root("rm", ["-rf", &acclel_path])?;
     Ok(())
 }
 
@@ -223,13 +223,11 @@ pub fn dtc_with_str(dts: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     Ok(output.stdout)
 }
 
-pub fn xlnx_bit_to_bin(bit_path: &str, bin_path: &str, arch: &str) -> Result<(), Box<dyn Error>> {
+pub fn xlnx_bitstream_to_bin(bit_path: &str, bin_path: &str, arch: &str) -> Result<(), Box<dyn Error>> {
     let mut bif_file = tempfile::Builder::new().suffix(".bif").tempfile()?;
     bif_file.write(format!("all:\n{{\n    {}\n}}\n", bit_path).as_bytes())?;
     let bif_path = bif_file.path().to_path_buf();
-    bif_file.close()?;
-
-    let output = command_root(
+    let output = uidmng::command(
         "bootgen",
         [
             "-w",
@@ -237,8 +235,8 @@ pub fn xlnx_bit_to_bin(bit_path: &str, bin_path: &str, arch: &str) -> Result<(),
             &bif_path.to_str().unwrap(),
             "-arch",
             arch,
-            "-process_bitstream",
-            "bin",
+//            "-process_bitstream",
+//            "bin",
             "-o",
             bin_path,
         ],
@@ -246,6 +244,17 @@ pub fn xlnx_bit_to_bin(bit_path: &str, bin_path: &str, arch: &str) -> Result<(),
     if !output.status.success() {
         return Err("Failed to execute bootgen".into());
     }
-
     Ok(())
+}
+
+
+pub fn xlnx_bitstream_to_bin_with_vec(bitstream: &[u8], arch: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut bit_file = tempfile::Builder::new().suffix(".bit").tempfile()?;
+    let     bin_file = tempfile::Builder::new().suffix(".bin").tempfile()?;
+    bit_file.write(bitstream)?;
+    let bit_path = bit_file.path().to_str().unwrap();
+    let bin_path = bin_file.path().to_str().unwrap();
+    xlnx_bitstream_to_bin(bit_path, bin_path, arch)?;
+    let bin = std::fs::read(bin_path)?;
+    Ok(bin)
 }
