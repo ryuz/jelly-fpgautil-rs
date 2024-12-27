@@ -27,15 +27,15 @@ pub fn set_allow_sudo(allow: bool) {
     uidmng::set_allow_sudo(allow);
 }
 
-pub fn unload() -> Result<(), Box<dyn Error>> {
-    uidmng::command_root("dfx-mgr-client", ["-remove"])?;
+pub fn unload(slot: i32) -> Result<(), Box<dyn Error>> {
+    uidmng::command_root("dfx-mgr-client", ["-remove", &slot.to_string()])?;
     uidmng::command_root("rmdir", ["/configfs/device-tree/overlays/full"])?;
     Ok(())
 }
 
-pub fn load(accel_name: &str) -> Result<(), Box<dyn Error>> {
+pub fn load(accel_name: &str) -> Result<i32, Box<dyn Error>> {
     uidmng::command_root("dfx-mgr-client", ["-load", accel_name])?;
-    Ok(())
+    Ok(0)
 }
 
 pub fn copy_to_firmware(path: &str) -> Result<(), Box<dyn Error>> {
