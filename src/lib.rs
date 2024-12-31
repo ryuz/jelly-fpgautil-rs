@@ -53,6 +53,11 @@ pub fn write_to_firmware(name: &str, bin: &[u8]) -> Result<(), Box<dyn Error>> {
     uidmng::write_root(&firmware_path, bin)
 }
 
+pub fn remove_firmware(name: &str) -> Result<(), Box<dyn Error>> {
+    let firmware_path = format!("/lib/firmware/{}", name);
+    uidmng::command_root("rm", ["-f", &firmware_path, bin])
+}
+
 pub fn load_bitstream_from_firmware(bitstream_name: &str) -> Result<(), Box<dyn Error>> {
     let load_cmd = format!(
         "echo {} > /sys/class/fpga_manager/fpga0/firmware",
