@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 tempfile = "3.14.0"
-jelly-uidmng = {git="https://github.com/ryuz/jelly-uidmng.git", tag="v0.0.3"}
+jelly-uidmng = {git="https://github.com/ryuz/jelly-uidmng.git", tag="v0.0.4"}
