@@ -55,7 +55,8 @@ pub fn write_to_firmware(name: &str, bin: &[u8]) -> Result<(), Box<dyn Error>> {
 
 pub fn remove_firmware(name: &str) -> Result<(), Box<dyn Error>> {
     let firmware_path = format!("/lib/firmware/{}", name);
-    uidmng::command_root("rm", ["-f", &firmware_path, bin])
+    uidmng::command_root("rm", ["-f", &firmware_path])?;
+    Ok(())
 }
 
 pub fn load_bitstream_from_firmware(bitstream_name: &str) -> Result<(), Box<dyn Error>> {
