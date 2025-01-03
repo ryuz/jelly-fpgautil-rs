@@ -3,6 +3,7 @@ use jelly_uidmng as uidmng;
 
 fn main() {
     uidmng::change_user().unwrap();
+    uidmng::set_allow_sudo(true);
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
