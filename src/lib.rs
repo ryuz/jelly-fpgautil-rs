@@ -28,8 +28,9 @@ pub fn set_allow_sudo(allow: bool) {
 }
 
 pub fn unload(slot: i32) -> Result<(), Box<dyn Error>> {
-    uidmng::command_root("dfx-mgr-client", ["-remove", &slot.to_string()])?;
-    uidmng::command_root("rmdir", ["/configfs/device-tree/overlays/full"])?;
+    let _ = uidmng::command_root("dfx-mgr-client", ["-remove", &slot.to_string()]);
+    let _ = uidmng::command_root("rmdir", ["/configfs/device-tree/overlays/full"]);
+    let _ = uidmng::write_root("/sys/class/fpga_manager/fpga0/flags", b"0");
     Ok(())
 }
 
