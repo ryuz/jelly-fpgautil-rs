@@ -6,6 +6,8 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::result::Result;
 
+
+// ディレクトリが存在するかのチェック
 fn directory_exists(path: &str) -> bool {
     let path = Path::new(path);
     match fs::metadata(path) {
@@ -14,7 +16,8 @@ fn directory_exists(path: &str) -> bool {
     }
 }
 
-fn get_fname(path: &str) -> Result<&str, Box<dyn Error>> {
+// パスからファイル名を抽出
+fn extract_filename(path: &str) -> Result<&str, Box<dyn Error>> {
     let fname = Path::new(path)
         .file_name()
         .ok_or("Failed to extract filename")?
@@ -23,15 +26,31 @@ fn get_fname(path: &str) -> Result<&str, Box<dyn Error>> {
     Ok(fname)
 }
 
+// 必要に応じて sudo を使う事を許可するかどうかを設定
 pub fn set_allow_sudo(allow: bool) {
     uidmng::set_allow_sudo(allow);
 }
 
+pub fn machine_architecture() -> Result<String, Box<dyn std::error::Error>> {
+    let output = uidmng::command("uname", ["-m"])?;
+    let arch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(arch)
+}
+
 pub fn unload(slot: i32) -> Result<(), Box<dyn Error>> {
-    let _ = uidmng::command_root("dfx-mgr-client", ["-remove", &slot.to_string()]);
-    let _ = uidmng::command_root("rmdir", ["/configfs/device-tree/overlays/full"]);
-    let _ = uidmng::write_root("/sys/class/fpga_manager/fpga0/flags", b"0");
-    Ok(())
+    if machine_architecture()? == "armv7l" {
+        // sudo sh -c "echo 0 > $(DEVTREE_PATH)/overlays/full/status" ;
+        uidmng::write_root("/configfs/device-tree/overlays/full/status", b"0")?;
+        // sudo rmdir $(DEVTREE_PATH)/overlays/full ;
+        uidmng::command_root("rmdir", ["/configfs/device-tree/overlays/full"])?;
+        Ok(())
+    }
+    else {
+        let _ = uidmng::command_root("dfx-mgr-client", ["-remove", &slot.to_string()]);
+        let _ = uidmng::command_root("rmdir", ["/configfs/device-tree/overlays/full"]);
+        let _ = uidmng::write_root("/sys/class/fpga_manager/fpga0/flags", b"0");
+        Ok(())
+    }
 }
 
 pub fn load(accel_name: &str) -> Result<i32, Box<dyn Error>> {
@@ -40,7 +59,7 @@ pub fn load(accel_name: &str) -> Result<i32, Box<dyn Error>> {
 }
 
 pub fn copy_to_firmware(path: &str) -> Result<(), Box<dyn Error>> {
-    let fname = get_fname(path)?;
+    let fname = extract_filename(path)?;
     let firmware_path = format!("/lib/firmware/{}", fname);
     let out = uidmng::command_root("cp", [path, &firmware_path])?;
     if !out.status.success() {
@@ -73,7 +92,7 @@ pub fn load_bitstream_from_firmware(bitstream_name: &str) -> Result<(), Box<dyn 
 }
 
 pub fn load_bitstream(bitstream_path: &str) -> Result<(), Box<dyn Error>> {
-    let fname = get_fname(bitstream_path)?;
+    let fname = extract_filename(bitstream_path)?;
     copy_to_firmware(bitstream_path)?;
     load_bitstream_from_firmware(fname)?;
     Ok(())
@@ -88,35 +107,90 @@ pub fn load_bitstream_with_vec(bitstream_vec: &[u8]) -> Result<(), Box<dyn Error
     Ok(())
 }
 
-pub fn load_dtbo_from_firmware(dtb_name: &str) -> Result<(), Box<dyn Error>> {
-    uidmng::write_root("/sys/class/fpga_manager/fpga0/flags", b"0")?;
-    let output = uidmng::command_root("mkdir", ["/configfs/device-tree/overlays/full"])?;
-    if !output.status.success() {
-        return Err("Failed to mkdir /configfs/device-tree/overlays/full".into());
-    }
-    uidmng::write_root(
-        "/configfs/device-tree/overlays/full/path",
-        dtb_name.as_bytes(),
-    )?;
 
-    for _ in 0..10 {
-        if uidmng::read("/configfs/device-tree/overlays/full/status")? == b"applied\n" {
-            return Ok(());
+pub fn load_dtbo_from_firmware(dtb_name: &str) -> Result<(), Box<dyn Error>> {
+    println!("load_dtbo_from_firmware");
+    println!("machine_architecture = {}", machine_architecture()?);
+
+    // FIRMWARE_PATH : /lib/firmware
+    // DEVTREE_PATH : /configfs/device-tree
+
+    if machine_architecture()? == "armv7l" {
+        println!("ZYBO detected: use direct dtbo copy method");
+
+        if ! directory_exists("/configfs/device-tree") {
+            // println!("sudo mkdir -p /configfs");
+            let output = uidmng::command_root("mkdir", ["-p", "/configfs"])?;
+            if !output.status.success() {
+                return Err("Failed to mkdir /configfs".into());
+            }
+
+            // println!("sudo mount -t configfs configfs /configfs");
+            let output = uidmng::command_root("mount", ["-t", "configfs", "configfs", "/configfs"])?;
+            if !output.status.success() {
+                return Err("Failed to mount configfs".into());
+            }
         }
-        std::thread::sleep(std::time::Duration::from_micros(100));
+
+        // println!("sudo mkdir -p $(DEVTREE_PATH)/overlays/full");
+        let output = uidmng::command_root("mkdir", ["-p", "/configfs/device-tree/overlays/full"])?;
+        if !output.status.success() {
+            return Err("Failed to mkdir /configfs/device-tree/overlays/full".into());
+        }
+
+        // println!("sudo cp $(DTBO_FILE) $(DEVTREE_PATH)/overlays/full/dtbo");
+        let output = uidmng::command_root("cp", [
+            &format!("/lib/firmware/{}", dtb_name),
+            "/configfs/device-tree/overlays/full/dtbo",
+            ])?;
+        if !output.status.success() {
+            return Err("Failed to copy dtbo to /configfs/device-tree/overlays/full/dtbo".into());
+        }
+
+        // sudo sh -c "echo 1 > $(DEVTREE_PATH)/overlays/full/status"
+        uidmng::write_root("/configfs/device-tree/overlays/full/status", b"1")?;
+
+        //	sleep 1
+        std::thread::sleep(std::time::Duration::from_micros(1000));
+        return Ok(());
+    }
+    else {
+        // sudo sh -c "echo 0 > /sys/class/fpga_manager/fpga0/flags"
+        uidmng::write_root("/sys/class/fpga_manager/fpga0/flags", b"0")?;
+
+        // sudo mkdir $(DEVTREE_PATH)/overlays/full
+        let output = uidmng::command_root("mkdir", ["-p", "/configfs/device-tree/overlays/full"])?;
+        if !output.status.success() {
+            return Err("Failed to mkdir /configfs/device-tree/overlays/full".into());
+        }
+
+        // sudo sh -c "echo -n $(DTBO_FILE) > /configfs/device-tree/overlays/full/path"
+        uidmng::write_root(
+            "/configfs/device-tree/overlays/full/path",
+            dtb_name.as_bytes(),
+        )?;
+
+	    // sleep 1
+	    // cat $(DEVTREE_PATH)/overlays/full/status
+        for _ in 0..10 {
+            if uidmng::read("/configfs/device-tree/overlays/full/status")? == b"applied\n" {
+                return Ok(());
+            }
+            std::thread::sleep(std::time::Duration::from_micros(100));
+        }
     }
     return Err("Timeout to apply dtbo".into());
 }
 
 pub fn load_dtbo(dtb_path: &str) -> Result<(), Box<dyn Error>> {
-    let fname = get_fname(dtb_path)?;
+    let fname = extract_filename(dtb_path)?;
     copy_to_firmware(dtb_path)?;
     load_dtbo_from_firmware(fname)?;
     Ok(())
 }
 
-pub fn load_dtb_with_vec(dtb_path: &[u8]) -> Result<(), Box<dyn Error>> {
-    uidmng::write_root("/lib/firmware/jelly-fpgautil.dtbo", dtb_path)?;
+pub fn load_dtb_with_vec(dtb_vec: &[u8]) -> Result<(), Box<dyn Error>> {
+    uidmng::write_root("/lib/firmware/jelly-fpgautil.dtbo", dtb_vec)?;
     load_dtbo_from_firmware("jelly-fpgautil.dtbo")
 }
 
@@ -128,18 +202,18 @@ pub fn register_accel(
     json_file: Option<&str>,
     overwrite: bool,
 ) -> Result<(), Box<dyn Error>> {
-    // acclel_path のディレクトリ存在チェック
-    let acclel_path = format!("/lib/firmware/xilinx/{}", accel_name);
-    if directory_exists(&acclel_path) {
+    // accel_path のディレクトリ存在チェック
+    let accel_path = format!("/lib/firmware/xilinx/{}", accel_name);
+    if directory_exists(&accel_path) {
         if !overwrite {
             return Err("Accel already exists".into());
         }
-        let out = uidmng::command_root("rm", ["-rf", &acclel_path])?;
+        let out = uidmng::command_root("rm", ["-rf", &accel_path])?;
         if !out.status.success() {
             return Err("Failed to remove existing accel".into());
         }
     }
-    uidmng::command_root("mkdir", ["-p", &acclel_path])?;
+    uidmng::command_root("mkdir", ["-p", &accel_path])?;
 
     let bin_fname = Path::new(bin_file)
         .file_name()
@@ -152,18 +226,18 @@ pub fn register_accel(
         .to_str()
         .ok_or("Invalid filename")?;
 
-    uidmng::command_root("cp", [bin_file, &format!("{}/{}", acclel_path, bin_fname)])?;
+    uidmng::command_root("cp", [bin_file, &format!("{}/{}", accel_path, bin_fname)])?;
     uidmng::command_root(
         "cp",
-        [dtbo_file, &format!("{}/{}", acclel_path, dtbo_fname)],
+        [dtbo_file, &format!("{}/{}", accel_path, dtbo_fname)],
     )?;
 
     if let Some(json_file) = json_file {
-        uidmng::command_root("cp", [json_file, &format!("{}/shell.json", acclel_path)])?;
+        uidmng::command_root("cp", [json_file, &format!("{}/shell.json", accel_path)])?;
     } else {
         let json_data = "{\n    \"shell_type\" : \"XRT_FLAT\",\n    \"num_slots\" : \"1\"\n}\n";
         uidmng::write_root(
-            &format!("{}/shell.json", acclel_path),
+            &format!("{}/shell.json", accel_path),
             &json_data.as_bytes().to_vec(),
         )?;
     }
@@ -181,26 +255,26 @@ pub fn register_accel_with_vec(
     json: Option<&str>,
     overwrite: bool,
 ) -> Result<(), Box<dyn Error>> {
-    // acclel_path のディレクトリ存在チェック
-    let acclel_path = format!("/lib/firmware/xilinx/{}", accel_name);
-    if directory_exists(&acclel_path) {
+    // accel_path のディレクトリ存在チェック
+    let accel_path = format!("/lib/firmware/xilinx/{}", accel_name);
+    if directory_exists(&accel_path) {
         if !overwrite {
             return Err("Accel already exists".into());
         }
-        let out = uidmng::command_root("rm", ["-rf", &acclel_path])?;
+        let out = uidmng::command_root("rm", ["-rf", &accel_path])?;
         if !out.status.success() {
             return Err("Failed to remove existing accel".into());
         }
     }
-    uidmng::command_root("mkdir", ["-p", &acclel_path])?;
-    uidmng::write_root(&format!("{}/{}", acclel_path, bin_fname), bin)?;
-    uidmng::write_root(&format!("{}/{}", acclel_path, dtbo_fname), dtbo)?;
+    uidmng::command_root("mkdir", ["-p", &accel_path])?;
+    uidmng::write_root(&format!("{}/{}", accel_path, bin_fname), bin)?;
+    uidmng::write_root(&format!("{}/{}", accel_path, dtbo_fname), dtbo)?;
     if let Some(json) = json {
-        uidmng::write_root(&format!("{}/shell.json", acclel_path), &json.as_bytes())?;
+        uidmng::write_root(&format!("{}/shell.json", accel_path), &json.as_bytes())?;
     } else {
         let json_data = "{\n    \"shell_type\" : \"XRT_FLAT\",\n    \"num_slots\" : \"1\"\n}\n";
         uidmng::write_root(
-            &format!("{}/shell.json", acclel_path),
+            &format!("{}/shell.json", accel_path),
             &json_data.as_bytes().to_vec(),
         )?;
     }
@@ -209,8 +283,8 @@ pub fn register_accel_with_vec(
 }
 
 pub fn unregister_accel(accel_name: &str) -> Result<(), Box<dyn Error>> {
-    let acclel_path = format!("/lib/firmware/xilinx/{}", accel_name);
-    uidmng::command_root("rm", ["-rf", &acclel_path])?;
+    let accel_path = format!("/lib/firmware/xilinx/{}", accel_name);
+    uidmng::command_root("rm", ["-rf", &accel_path])?;
     Ok(())
 }
 
