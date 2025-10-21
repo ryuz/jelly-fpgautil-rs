@@ -109,15 +109,9 @@ pub fn load_bitstream_with_vec(bitstream_vec: &[u8]) -> Result<(), Box<dyn Error
 
 
 pub fn load_dtbo_from_firmware(dtb_name: &str) -> Result<(), Box<dyn Error>> {
-    println!("load_dtbo_from_firmware");
-    println!("machine_architecture = {}", machine_architecture()?);
-
     // FIRMWARE_PATH : /lib/firmware
     // DEVTREE_PATH : /configfs/device-tree
-
     if machine_architecture()? == "armv7l" {
-        println!("ZYBO detected: use direct dtbo copy method");
-
         if ! directory_exists("/configfs/device-tree") {
             // println!("sudo mkdir -p /configfs");
             let output = uidmng::command_root("mkdir", ["-p", "/configfs"])?;
