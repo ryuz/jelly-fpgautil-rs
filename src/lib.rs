@@ -333,3 +333,21 @@ pub fn xlnx_bitstream_to_bin_with_vec(bitstream: &[u8], arch: &str) -> Result<Ve
     let bin = std::fs::read(bin_path)?;
     Ok(bin)
 }
+
+pub fn load_remoteproc_from_firmware(remoteproc_id : usize, elf_name: &str) -> Result<(), Box<dyn Error>> {
+    let path = format!("/sys/class/remoteproc/remoteproc{}/firmware", remoteproc_id);
+    uidmng::write_root(&path, elf_name.as_bytes())?;
+    Ok(())
+}
+
+pub fn start_remoteproc(remoteproc_id : usize) -> Result<(), Box<dyn Error>> {
+    let path = format!("/sys/class/remoteproc/remoteproc{}/state", remoteproc_id);
+    uidmng::write_root(&path, b"start")?;
+    Ok(())
+}
+
+pub fn stop_remoteproc(remoteproc_id : usize) -> Result<(), Box<dyn Error>> {
+    let path = format!("/sys/class/remoteproc/remoteproc{}/state", remoteproc_id);
+    uidmng::write_root(&path, b"stop")?;
+    Ok(())
+}
