@@ -59,7 +59,6 @@ dependencies = [
 [[package]]
 name = "jelly-uidmng"
 version = "0.0.4"
-source = "git+https://github.com/ryuz/jelly-uidmng-rs.git?tag=v0.0.4#65e3284b9c10db8a306cb69270a590a72a6cd83d"
 dependencies = [
  "nix",
 ]

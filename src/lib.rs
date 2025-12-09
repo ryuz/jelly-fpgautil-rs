@@ -341,13 +341,18 @@ pub fn load_remoteproc_from_firmware(remoteproc_id : usize, elf_name: &str) -> R
 }
 
 pub fn start_remoteproc(remoteproc_id : usize) -> Result<(), Box<dyn Error>> {
+    println!("start remoteproc{}", remoteproc_id);
     let path = format!("/sys/class/remoteproc/remoteproc{}/state", remoteproc_id);
     uidmng::write_root(&path, b"start")?;
+//  uidmng::command_root("sh", ["-c", &format!("echo start > /sys/class/remoteproc/remoteproc{}/state", remoteproc_id)])?;
     Ok(())
 }
 
 pub fn stop_remoteproc(remoteproc_id : usize) -> Result<(), Box<dyn Error>> {
+    println!("stop remoteproc{}", remoteproc_id);
+
     let path = format!("/sys/class/remoteproc/remoteproc{}/state", remoteproc_id);
     uidmng::write_root(&path, b"stop")?;
+//  uidmng::command_root("sh", ["-c", &format!("echo stop > /sys/class/remoteproc/remoteproc{}/state", remoteproc_id)])?;
     Ok(())
 }
